@@ -27,7 +27,8 @@ README.md                                                  this file
 Ready-made APKs are on the [Releases](../../releases) page, one per upstream microG release (`gmscore-<tag>`).
 Only **arm64-v8a, non-Huawei** devices are built: the same variant as official microG's
 `com.google.android.gms-….apk` (mapbox maps, default target), with other CPU architectures stripped.
-Only the GmsCore APK is built (no companion / Play Store app).
+Only the GmsCore APK is built (no companion / Play Store app). Network location offers the same online sources
+as official microG: **Positon** (suggested), BeaconDB and a custom URL.
 
 ## What the patch does
 Upstream flow: `HybridAuthenticateActivity` → `AuthenticatorActivity` (microG vault).
@@ -90,6 +91,9 @@ Upstream has no release signing config, so CI signs the `*-release-unsigned.apk`
 `apksigner` using a fixed key from the `SIGNING_KEYSTORE_B64` secret. The key must never change, or users
 can't update without uninstalling (and losing their microG data).
 
+Upstream's code only ships BeaconDB as an online location source; official releases add Positon via
+`location.online-sources` in `local.properties`. CI writes the same JSON from the `LOCATION_ONLINE_SOURCES` secret.
+
 If applying, testing, building or publishing fails, one issue `Patch build failed for <tag>` is opened and
 scheduled runs skip that tag while it is open. Fix `patches/`, then close the issue (or run manually) to retry.
 
@@ -103,6 +107,9 @@ base64 -w0 release.keystore | gh secret set SIGNING_KEYSTORE_B64
 ```
 
 The workflow expects store password `android` and alias `androiddebugkey`. Back up the keystore.
+
+Also set `LOCATION_ONLINE_SOURCES` to a JSON list of location sources (see upstream
+`play-services-location/core/base/build.gradle` for the format). Use your own Positon API key if you have one.
 
 ## Credits
 All of microG is the work of the **[microG Project](https://microg.org)**: its founder and lead developer
