@@ -47,11 +47,18 @@ back to a CTAP2 response (`attestationObject` / `authenticatorData` + `signature
 - **Dependencies:** `androidx.credentials` is added to `play-services-fido/core` at the version upstream already
   pins (1.2.0). Don't bump it to 1.5.0+: that needs minSdk 21, and microG supports 19.
 
-## Known limitation (important)
-Credential Manager accepts a caller-supplied `origin` / `clientDataHash` only from **privileged** callers
-(`CREDENTIAL_MANAGER_SET_ORIGIN`, allow-listed like browsers). An ordinary user-installed microG gets a
-`SecurityException` and silently falls back to the vault. Full effect needs microG installed as a privileged
-system app / allow-listed by the ROM. Without that, no app-side code can make a provider sign the PC's hash.
+## What has to be true for the hand-off to work
+1. **Android 14+** (API 34), where the system Credential Manager exists.
+2. **Permission:** passing the PC's origin needs `CREDENTIAL_MANAGER_SET_ORIGIN`. It is a *normal* permission
+   (AOSP Android 14–16), so the patch just declares it and Android grants it at install. No root, no system app.
+3. **Your password manager must trust microG.** Providers only accept a caller-supplied origin from apps on
+   their own trusted list (normally browsers). Some let you add apps yourself: add `com.google.android.gms` with
+   this repo's signing certificate (SHA-256 `20:41:F0:1C:D7:15:75:99:A6:64:F3:93:70:BE:22:62:BF:B9:91:8E:5B:D9:A5:6B:6C:3E:6C:D4:9F:D8:97:D2`).
+   Providers that only trust their built-in list will refuse.
+4. **The provider must sign the PC's `clientDataHash`** it is given (as it does for browsers), not its own.
+
+If any of these fails, the request falls back to microG's own passkey store, same as upstream. Which providers
+meet 3 and 4 is untested; reports welcome.
 
 ## Installing the APKs
 These are **release** builds (unminified, like upstream's) of upstream microG with the patch, signed with this
