@@ -64,7 +64,7 @@ jobs:
         working-directory: gmscore
         # only the official variant (mapbox maps + default target) and lint only the module our patch touches
         run: >
-          ./gradlew :play-services-fido-core:testReleaseUnitTest :play-services-fido-core:lintRelease
+          ./gradlew --parallel :play-services-fido-core:testReleaseUnitTest :play-services-fido-core:lintRelease
           :play-services-core:assembleMapboxDefaultRelease
       - name: Strip to arm64 & sign
         if: steps.tag.outputs.skip != 'true'
