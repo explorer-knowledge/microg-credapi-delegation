@@ -1,0 +1,89 @@
+name: Patch & build microG on new release
+on:
+  schedule:
+    - cron: "0 */6 * * *" # shortcut: GitHub can't trigger on another repo's release, so poll; lower for faster pickup
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "microg/GmsCore tag (default: latest release)"
+        required: false
+permissions:
+  contents: write
+  issues: write
+concurrency: patch-build # a manual and a scheduled run must not both publish the same release
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GRADLE_MICROG_VERSION_WITHOUT_GIT: 1
+      INPUT_TAG: ${{ inputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { path: ours }
+      - name: Resolve upstream tag
+        id: tag
+        working-directory: ours
+        run: |
+          T="$INPUT_TAG"
+          [ -n "$T" ] || T=$(gh api repos/microg/GmsCore/releases/latest --jq .tag_name)
+          echo "tag=$T" >> "$GITHUB_OUTPUT"
+          echo "issue_title=Patch build failed for $T" >> "$GITHUB_OUTPUT"
+          [ -z "$INPUT_TAG" ] || exit 0 # manual runs always build
+          if gh release view "gmscore-$T" >/dev/null 2>&1; then
+            echo "Already released"; echo "skip=true" >> "$GITHUB_OUTPUT"
+          elif [ "$(gh issue list --state open --search "in:title \"Patch build failed for $T\"" --json number --jq length)" != 0 ]; then
+            echo "Known failure for $T, waiting for the issue to be closed"; echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/checkout@v4
+        if: steps.tag.outputs.skip != 'true'
+        with:
+          repository: microg/GmsCore
+          ref: ${{ steps.tag.outputs.tag }}
+          path: gmscore
+      - name: Apply patches
+        if: steps.tag.outputs.skip != 'true'
+        working-directory: gmscore
+        run: |
+          for p in ../ours/patches/*.patch; do git apply --3way "$p"; done
+      - name: Install fixed signing key
+        if: steps.tag.outputs.skip != 'true'
+        env:
+          KS: ${{ secrets.DEBUG_KEYSTORE_B64 }}
+        run: |
+          # a fresh runner key per release would block updates and force users to wipe microG
+          [ -n "$KS" ] || { echo "::error::Set the DEBUG_KEYSTORE_B64 secret (see .docs/README.md)"; exit 1; }
+          mkdir -p ~/.android && echo "$KS" | base64 -d > ~/.android/debug.keystore
+      - uses: actions/setup-java@v4
+        if: steps.tag.outputs.skip != 'true'
+        with: { distribution: temurin, java-version: "17" }
+      - uses: gradle/actions/setup-gradle@v4
+        if: steps.tag.outputs.skip != 'true'
+      - name: Test patch
+        if: steps.tag.outputs.skip != 'true'
+        working-directory: gmscore
+        run: ./gradlew :play-services-fido-core:testDebugUnitTest
+      - name: Build
+        if: steps.tag.outputs.skip != 'true'
+        working-directory: gmscore
+        run: ./gradlew assembleDebug lintDebug
+      - name: Publish APKs
+        if: steps.tag.outputs.skip != 'true'
+        working-directory: gmscore
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          gh release create "gmscore-$TAG" -R "$GITHUB_REPOSITORY" \
+            -t "GmsCore $TAG + Credential Manager hybrid patch" \
+            -n "Debug build of upstream $TAG with patches/ applied, signed with this repo's fixed key." \
+            $(find . -name '*.apk' -path '*debug*')
+      - name: Report failure
+        # scheduled runs skip a tag while its issue is open, so this opens at most one issue per tag
+        if: failure() && steps.tag.outcome == 'success' && steps.tag.outputs.skip != 'true' && inputs.tag == ''
+        working-directory: ours
+        env:
+          TITLE: ${{ steps.tag.outputs.issue_title }}
+        run: |
+          [ "$(gh issue list --state open --search "in:title \"$TITLE\"" --json number --jq length)" = 0 ] || exit 0
+          gh issue create -t "$TITLE" -b "Patch, test, build or publish failed. Run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID
+          Close this issue after fixing patches/ to let the scheduled build retry."
