@@ -25,6 +25,8 @@ README.md                                                  this file
 ```
 
 Ready-made APKs are on the [Releases](../../releases) page, one per upstream microG release (`gmscore-<tag>`).
+Only **arm64-v8a, non-Huawei** devices are built: the same variant as official microG's
+`com.google.android.gms-….apk` (mapbox maps, default target), with other CPU architectures stripped.
 
 ## What the patch does
 Upstream flow: `HybridAuthenticateActivity` → `AuthenticatorActivity` (microG vault).
