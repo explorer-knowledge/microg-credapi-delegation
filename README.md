@@ -86,6 +86,8 @@ Spoofing is unrelated to Play Integrity: an unlocked bootloader fails integrity 
 GitHub cannot trigger a workflow on another repo's release, so the workflow polls every 6 hours, compares the
 latest `microg/GmsCore` release tag with this repo's `gmscore-<tag>` releases, and builds only new ones.
 Manual run: *Actions → Patch & build microG on new release → Run workflow* (optional tag).
+Running it for a tag that's already released rebuilds it and replaces the APK (use this after a patch fix).
+Each run also re-enables the schedule, since GitHub turns off scheduled workflows in public repos after 60 quiet days.
 
 Upstream has no release signing config, so CI signs the `*-release-unsigned.apk` outputs with `zipalign` +
 `apksigner` using a fixed key from the `SIGNING_KEYSTORE_B64` secret. The key must never change, or users

@@ -8,6 +8,7 @@ on:
         description: "microg/GmsCore tag (default: latest release)"
         required: false
 permissions:
+  actions: write # keepalive below
   contents: write
   issues: write
 concurrency: patch-build # a manual and a scheduled run must not both publish the same release
@@ -19,6 +20,10 @@ jobs:
       GRADLE_MICROG_VERSION_WITHOUT_GIT: 1
       INPUT_TAG: ${{ inputs.tag }}
     steps:
+      - name: Keep schedule alive
+        # GitHub disables cron in public repos after 60 days without activity; re-enabling resets that
+        # (keepalive-workflow's approach). shortcut: undocumented by GitHub, push a commit if the schedule stops
+        run: gh api -X PUT "repos/$GITHUB_REPOSITORY/actions/workflows/patch-build.yml/enable"
       - uses: actions/checkout@v4
         with: { path: ours }
       - name: Resolve upstream tag
@@ -103,10 +108,15 @@ jobs:
         env:
           TAG: ${{ steps.tag.outputs.tag }}
         run: |
-          gh release create "gmscore-$TAG" -R "$GITHUB_REPOSITORY" \
-            -t "GmsCore $TAG + Credential Manager hybrid patch" \
-            -n "arm64-v8a, non-Huawei (mapbox/default, like official microG) release build of upstream $TAG with patches/ applied, signed with this repo's fixed key." \
-            "$RUNNER_TEMP/out"/*.apk
+          # manual rebuild of an existing tag (e.g. after a patch fix) replaces the APK instead of failing
+          if gh release view "gmscore-$TAG" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "gmscore-$TAG" -R "$GITHUB_REPOSITORY" --clobber "$RUNNER_TEMP/out"/*.apk
+          else
+            gh release create "gmscore-$TAG" -R "$GITHUB_REPOSITORY" \
+              -t "GmsCore $TAG + Credential Manager hybrid patch" \
+              -n "arm64-v8a, non-Huawei (mapbox/default, like official microG) release build of upstream $TAG with patches/ applied, signed with this repo's fixed key." \
+              "$RUNNER_TEMP/out"/*.apk
+          fi
       - name: Report failure
         # scheduled runs skip a tag while its issue is open, so this opens at most one issue per tag
         if: failure() && steps.tag.outcome == 'success' && steps.tag.outputs.skip != 'true' && inputs.tag == ''
