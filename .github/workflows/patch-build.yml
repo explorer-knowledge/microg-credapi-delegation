@@ -74,7 +74,10 @@ jobs:
         run: |
           # upstream has no release signingConfig and hardcodes 4 ABIs, so strip and sign here
           BT="$ANDROID_HOME/build-tools/$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -1)"
-          apk=$(ls play-services-core/build/outputs/apk/mapboxDefault/release/*-release-unsigned.apk)
+          # upstream renames outputs to <applicationId>-<versionCode>.apk; expect exactly one
+          set -- play-services-core/build/outputs/apk/mapboxDefault/release/*.apk
+          [ $# = 1 ] && [ -f "$1" ] || { echo "::error::expected one APK, got: $*"; exit 1; }
+          apk="$1"
           cp "$apk" "$RUNNER_TEMP/arm64.apk"
           zip -qd "$RUNNER_TEMP/arm64.apk" 'lib/armeabi-v7a/*' 'lib/x86/*' 'lib/x86_64/*'
           unzip -l "$RUNNER_TEMP/arm64.apk" | grep -q 'lib/arm64-v8a/' || { echo "::error::no arm64 libs"; exit 1; }
