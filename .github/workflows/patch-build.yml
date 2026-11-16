@@ -46,14 +46,14 @@ jobs:
         working-directory: gmscore
         run: |
           for p in ../ours/patches/*.patch; do git apply --3way "$p"; done
-      - name: Install fixed signing key
+      - name: Check signing key
         if: steps.tag.outputs.skip != 'true'
         env:
-          KS: ${{ secrets.DEBUG_KEYSTORE_B64 }}
+          KS: ${{ secrets.SIGNING_KEYSTORE_B64 }}
         run: |
-          # a fresh runner key per release would block updates and force users to wipe microG
-          [ -n "$KS" ] || { echo "::error::Set the DEBUG_KEYSTORE_B64 secret (see .docs/README.md)"; exit 1; }
-          mkdir -p ~/.android && echo "$KS" | base64 -d > ~/.android/debug.keystore
+          # a fresh key per release would block updates and force users to wipe microG
+          [ -n "$KS" ] || { echo "::error::Set the SIGNING_KEYSTORE_B64 secret"; exit 1; }
+          echo "$KS" | base64 -d > "$RUNNER_TEMP/release.keystore"
       - uses: actions/setup-java@v4
         if: steps.tag.outputs.skip != 'true'
         with: { distribution: temurin, java-version: "17" }
@@ -62,11 +62,27 @@ jobs:
       - name: Test patch
         if: steps.tag.outputs.skip != 'true'
         working-directory: gmscore
-        run: ./gradlew :play-services-fido-core:testDebugUnitTest
+        run: ./gradlew :play-services-fido-core:testReleaseUnitTest
       - name: Build
         if: steps.tag.outputs.skip != 'true'
         working-directory: gmscore
-        run: ./gradlew assembleDebug lintDebug
+        run: ./gradlew assembleRelease lintRelease
+      - name: Sign APKs
+        if: steps.tag.outputs.skip != 'true'
+        working-directory: gmscore
+        run: |
+          # upstream has no release signingConfig, so Gradle emits *-release-unsigned.apk
+          BT="$ANDROID_HOME/build-tools/$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -1)"
+          mkdir -p "$RUNNER_TEMP/out"
+          find . -name '*-release-unsigned.apk' -path '*/outputs/apk/*' | while read -r apk; do
+            out="$RUNNER_TEMP/out/$(basename "${apk%-unsigned.apk}").apk"
+            [ ! -e "$out" ] || { echo "::error::Duplicate APK name $out"; exit 1; }
+            "$BT/zipalign" -f -p 4 "$apk" "$RUNNER_TEMP/aligned.apk"
+            "$BT/apksigner" sign --ks "$RUNNER_TEMP/release.keystore" --ks-pass pass:android \
+              --ks-key-alias androiddebugkey --out "$out" "$RUNNER_TEMP/aligned.apk"
+            "$BT/apksigner" verify "$out"
+          done
+          ls "$RUNNER_TEMP/out"/*.apk
       - name: Publish APKs
         if: steps.tag.outputs.skip != 'true'
         working-directory: gmscore
@@ -75,8 +91,8 @@ jobs:
         run: |
           gh release create "gmscore-$TAG" -R "$GITHUB_REPOSITORY" \
             -t "GmsCore $TAG + Credential Manager hybrid patch" \
-            -n "Debug build of upstream $TAG with patches/ applied, signed with this repo's fixed key." \
-            $(find . -name '*.apk' -path '*debug*')
+            -n "Release build of upstream $TAG with patches/ applied, signed with this repo's fixed key." \
+            "$RUNNER_TEMP/out"/*.apk
       - name: Report failure
         # scheduled runs skip a tag while its issue is open, so this opens at most one issue per tag
         if: failure() && steps.tag.outcome == 'success' && steps.tag.outputs.skip != 'true' && inputs.tag == ''
