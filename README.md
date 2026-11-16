@@ -27,6 +27,7 @@ README.md                                                  this file
 Ready-made APKs are on the [Releases](../../releases) page, one per upstream microG release (`gmscore-<tag>`).
 Only **arm64-v8a, non-Huawei** devices are built: the same variant as official microG's
 `com.google.android.gms-….apk` (mapbox maps, default target), with other CPU architectures stripped.
+Only the GmsCore APK is built (no companion / Play Store app).
 
 ## What the patch does
 Upstream flow: `HybridAuthenticateActivity` → `AuthenticatorActivity` (microG vault).
@@ -57,6 +58,21 @@ These are **release** builds (unminified, like upstream's) of upstream microG wi
 repo's key, **not** microG's. Like any self-built microG they need the usual microG setup (signature spoofing
 support in the ROM) and cannot update an official microG install in place: uninstall the official one first.
 Later releases from this repo update each other normally.
+
+### Does signature spoofing still work?
+**Yes, if your ROM supports it.** microG doesn't use its own signing key for spoofing. The spoofed Google
+signature is declared inside the APK (the upstream `fake-signature` module: `FAKE_PACKAGE_SIGNATURE` permission +
+`fake-signature` metadata), and that module is part of this build unchanged. Re-signing with this repo's key
+doesn't touch it.
+
+It will **not** work if:
+- the ROM has no signature spoofing support, or you haven't granted the "fake package signature" permission;
+- the ROM only allows spoofing for microG signed with the **official** microG key (some microG-bundled ROMs do);
+- microG is preinstalled as a system app by the ROM: Android won't let a differently signed APK replace it.
+
+Check in *microG Settings → Self-Check → Signature spoofing support*: "System has signature spoofing support",
+"System grants signature spoofing permission" and "System spoofs signature" must all be ticked.
+Spoofing is unrelated to Play Integrity: an unlocked bootloader fails integrity checks either way.
 
 ## How the automation works
 GitHub cannot trigger a workflow on another repo's release, so the workflow polls every 6 hours, compares the
