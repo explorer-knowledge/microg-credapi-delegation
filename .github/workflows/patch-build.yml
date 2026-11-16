@@ -54,6 +54,15 @@ jobs:
           # a fresh key per release would block updates and force users to wipe microG
           [ -n "$KS" ] || { echo "::error::Set the SIGNING_KEYSTORE_B64 secret"; exit 1; }
           echo "$KS" | base64 -d > "$RUNNER_TEMP/release.keystore"
+      - name: Configure location online sources (Positon + BeaconDB, like official builds)
+        if: steps.tag.outputs.skip != 'true'
+        working-directory: gmscore
+        env:
+          SOURCES: ${{ secrets.LOCATION_ONLINE_SOURCES }}
+        run: |
+          # upstream defaults to BeaconDB only; official releases inject this via local.properties
+          [ -n "$SOURCES" ] || { echo "::error::Set the LOCATION_ONLINE_SOURCES secret"; exit 1; }
+          printf 'location.online-sources=%s\n' "$SOURCES" >> local.properties
       - uses: actions/setup-java@v4
         if: steps.tag.outputs.skip != 'true'
         with: { distribution: temurin, java-version: "17" }
